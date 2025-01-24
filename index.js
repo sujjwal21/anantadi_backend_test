@@ -1,99 +1,55 @@
-// Import required modules
-const express = require("express");
-const bodyParser = require("body-parser");
-const { v4: uuidv4 } = require("uuid");
-const https = require("https");
-
-// Initialize Express app
+const express = require('express');
 const app = express();
-const PORT = 3000;
+const port = 3000;
 
-// Middleware
-app.use(bodyParser.json());
+app.use(express.json());
 
-// Queue to store tasks
-const taskQueue = [];
-const processingTasks = new Map();
+let taskQueue = []; // In-memory task queue
 
-// Function to process tasks
-const processTasks = () => {
-  const now = Date.now();
-
-  for (const task of taskQueue) {
-    if (!processingTasks.has(task.id)) {
-      processingTasks.set(task.id, task);
-    }
-
-    const taskData = processingTasks.get(task.id);
-
-    if (now >= taskData.nextRun) {
-      const remainingTime = taskData.totalDuration - (taskData.elapsedTime + 10);
-      
-      if (remainingTime > 0) {
-        console.log(`Task ${taskData.id} is running...`);
-        taskData.elapsedTime += 10;
-        taskData.nextRun = now + 10 * 60 * 1000;
-        sendStatus(taskData.user, "Running");
-      } else {
-        console.log(`Task ${taskData.id} is completed.`);
-        sendStatus(taskData.user, "Task Completed");
-        processingTasks.delete(task.id);
-        taskQueue.splice(taskQueue.indexOf(task), 1);
-      }
-    }
-  }
-};
-
-// Function to send status to users
-const sendStatus = (user, status) => {
-  console.log(`Sending status to user ${user}: ${status}`);
-};
-
-// POST API endpoint
-app.post("/api/task", (req, res) => {
-  const { totalDuration, user } = req.body;
-
-  if (!totalDuration || typeof totalDuration !== "number" || totalDuration <= 0) {
-    return res.status(400).json({ error: "Invalid totalDuration specified." });
+// API endpoint to receive requests
+app.post('/start-task', (req, res) => {
+  const { totalDuration, otherData } = req.body;
+  
+  // Validate input
+  if (!totalDuration || isNaN(totalDuration)) {
+    return res.status(400).json({ message: 'Invalid total duration.' });
   }
 
   const task = {
-    id: uuidv4(),
-    user: user || `Anonymous_${uuidv4().slice(0, 8)}`,
     totalDuration,
-    elapsedTime: 0,
-    nextRun: Date.now(),
+    otherData,
+    status: 'Queued',
+    startTime: Date.now(),
+    intervals: Math.floor(totalDuration / 10),
   };
 
   taskQueue.push(task);
-  console.log(`Task added to queue:`, task);
-  res.status(202).json({ message: "Task added to queue.", taskId: task.id });
+  
+  // Start processing the task in intervals of 10 minutes
+  processTask(task);
+
+  // Respond immediately with the task details
+  return res.status(200).json({ message: 'Task started', task });
 });
 
-// GET route to verify HTTPS connection
-app.get("/api/verify", (req, res) => {
-  const url = "https://example.com"; // Replace with the target URL
-
-  const agent = new https.Agent({
-    rejectUnauthorized: false, // WARNING: Avoid in production
-  });
-
-  https.get(url, { agent }, (response) => {
-    res.status(response.statusCode).json({
-      message: "HTTPS connection successful",
-      statusCode: response.statusCode,
-    });
-  }).on("error", (error) => {
-    console.error("Error during HTTPS request:", error);
-    res.status(500).json({
-      message: "HTTPS connection failed",
-      error: error.message,
-    });
-  });
-});
+// Function to process queued tasks
+function processTask(task) {
+  const interval = setInterval(() => {
+    const elapsedTime = (Date.now() - task.startTime) / 1000 / 60; // in minutes
+    if (elapsedTime < task.totalDuration) {
+      task.status = 'Running';
+      console.log(`Task is running for ${elapsedTime} minutes.`);
+      // Send a status response every 10 minutes
+      console.log(`Task status: ${task.status}`);
+    } else {
+      task.status = 'Task Completed';
+      console.log(`Task completed after ${elapsedTime} minutes.`);
+      clearInterval(interval); // Stop the task after completion
+    }
+  }, 10 * 60 * 1000); // 10-minute interval
+}
 
 // Start the server
-app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
-  setInterval(processTasks, 10 * 60 * 1000); // Process tasks every 10 minutes
+app.listen(port, () => {
+  console.log(`API Gateway is running on http://localhost:${port}`);
 });
