@@ -46,7 +46,7 @@ function processTask(task) {
       console.log(`Task completed after ${elapsedTime} minutes.`);
       clearInterval(interval); // Stop the task after completion
     }
-  }, 1 * 60 * 1000); // 10-minute interval
+  }, 10 * 60 * 1000); // 10-minute interval
 }
 
 // Start the server
